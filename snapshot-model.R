@@ -48,7 +48,6 @@ comments_user_info <- comments %>% group_by(comment_user_id,comment_user_login) 
 
 user_info <- merge(joinedinfo,comments_user_info, by.x="user_id", by.y="comment_user_id")
 user_info$time_to_post <- user_info$first_comment - user_info$first_class
-
 remove(joinedinfo,comments_user_info) 
 
 
@@ -153,6 +152,10 @@ library(dplyr)
 
 # For each month compute the probability of the term occurring in a month. 
 ## Simply the number of times the bigram used/no. bigrams in corpus
+
+
+
+
 month1_probability <- month1 %>% group_by(bigram) %>%
    summarize(occurrence=length(bigram),probability_occur = length(bigram)/nrow(month1),log_probability_occur = log(probability_occur) ) # Produces a dataframe with probabilities for each bigram of occurring in that month
 
@@ -169,6 +172,10 @@ names(month2_pc)[7]<-"log_probability_occur.pm"
 # replaces NA with 0
 month2_p[ , 15:17][is.na(month2_p[ , 15:17] ) ] = 0 
 month2_p$month <- "Month 2"
+
+
+
+
 
 month3_probability <- month3 %>% group_by(bigram) %>%
   summarize(occurrence=length(bigram),probability_occur = length(bigram)/nrow(month3),log_probability_occur = log(probability_occur) )

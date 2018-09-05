@@ -1,0 +1,159 @@
+A Snapshot Language Model for Zooniverse Projects
+========================================================
+author: Corey Jackson
+date: May 2, 2018
+autosize: true
+
+Overview
+========================================================
+
+**Goal**: Understand how language evolves in citizen science communities. 
+
+**Method**: Given a post p, we can then quantify how surprising its language is with respect to the lan- guage the community was using at the point in time when it was written by calculating p’s cross-entropy according to the snapshot language model SLMm(p) of the month m(p) in which the post was uttered; we write this as:
+
+![Language Model](Screenshot 2018-05-01 23.00.05.png)
+
+<font size = "4.5px">
+Cristian Danescu-Niculescu-Mizil, Robert West, Dan Jurafsky, Jure Leskovec, and Christopher Potts. 2013. No country for old members: user lifecycle and linguistic change in online communities. In Proceedings of the 22nd international conference on World Wide Web (WWW '13). ACM, New York, NY, USA, 307-318. DOI: https://doi.org/10.1145/2488388.2488416
+</font>
+
+
+```{r include = FALSE}
+library(readr)
+
+user_all <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/user_all.csv")
+user_all <- as.data.frame(user_all)
+
+userpost_all <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/userpost_all.csv")
+userpost_all <- as.data.frame(userpost_all)
+
+# Import Month 2
+month2_p <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month2_p.csv")
+month2_p <- as.data.frame(month2_p)
+
+month2_probability <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month2_probability.csv")
+month2_probability <- as.data.frame(month2_probability)
+
+month2 <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month2.csv")
+month2 <- as.data.frame(month2)
+
+month2_single <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month2_single.csv")
+month2_single <- as.data.frame(month2_single)
+
+# Import Month 3
+month3_p <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month3_p.csv")
+month3_p <- as.data.frame(month3_p)
+
+month3_probability <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month3_probability.csv")
+month3_probability <- as.data.frame(month3_probability)
+
+month3 <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month3.csv")
+month3 <- as.data.frame(month3)
+
+month3_single <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (CSCW 2018)/Data Analysis/SLM/Examples/month3_single.csv")
+month3_single <- as.data.frame(month3_single)
+```
+
+
+========================================================
+## Gravity Spy Dataset
+
+<font size = "4.5px">
+Gravity Spy Comments: 52,133  
+Bi-grams: 477,851  
+Users: 2,227  
+Months: 24  (2016-03-01 to 2018-02-01)
+</font>
+
+## Caveats
+<font size = "4.5px">
+Unigrams removed  
+Month 1 has one user  
+Model begins prior to launch
+</font>
+
+***
+![Monthly Bigrams](Examples/bigramsmonth.png)
+
+   
+Step 1: Bi-grams Dataset
+========================================================
+- Generate bigrams for each comment. 
+- Subset comments by month resulting in 24 dataframes.
+
+<font size = "5px">
+```{r}
+month2_single[,c(13:15)][628:635,]
+```
+</font>
+
+Step 2: Computing Probabilities
+========================================================
+- Aggregated dataframes to get the number of times each bigram occurred, probability, and log(probability) of each bigram occuring during that month.  
+- Proability computed as `length(bigram)/nrow(month3)` which is the number of times the bigram appears in the month divided by the total number of unique bigrams.
+
+<font size = "5px">
+```{r, eval=FALSE, message=FALSE, warning=FALSE}
+month2_probability <- month2 %>% group_by(bigram) %>%
+  summarize(occurrence=length(bigram),
+            probability_occur = length(bigram)/nrow(month2),
+            log_probability_occur = log(probability_occur))
+```
+</font>
+
+<font size = "5px">
+```{r}
+month2_probability[,c(2:5)][59:65,]
+```
+</font>
+
+Step 3: Aggregating Month 2 Probabilities Given Month 3
+========================================================
+<font size = "5px">
+- Below shows the merged month 3 bigrams merged with month 2
+- Those with a 0 value for `probability_occur` are new bigrams
+- `occurrence` indicates how many times that bigram appeared in the previous month (not the current)
+</font>
+
+<font size = "5px">
+```{r, eval=FALSE, message=FALSE, warning=FALSE}
+month3_p <- merge(month3_single,month2_probability, by=("bigram"),all.x=TRUE)
+month3_p[ , 15:17][is.na(month3_p[ , 15:17] ) ] = 0
+month3_p$month <- "Month 3"
+```
+</font>
+
+<font size = "4px">
+```{r, echo=FALSE}
+head(month3_p)[,c(2,9,14,16,17,18)]
+```
+</font>
+
+Analysis
+========================================================
+
+<font size = "4.5px">
+- Individual user language
+  - How is the language of users evolving to resemble/depart from community?
+- Thread level analysis. 
+  - Are there lengthy discussions which have high entropy
+  - Changes in entropy by month...are users adding new content to threads?
+</font>
+
+<font size = "4.5px">
+```{r, echo=FALSE}
+user_all[which(user_all$comment_user_login=="PetMor"),]
+```
+</font>
+
+
+
+
+Future Work
+========================================================
+
+- Dhruv working on visualizing evolution
+- Mabi exploring more complex model which might be included in Trajectories Analysis, but share some similarity
+- Open source [code](snapshot-model.R) to run across many Zooniverse projects 
+
+
