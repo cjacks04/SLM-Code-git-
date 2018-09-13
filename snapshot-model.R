@@ -24,13 +24,13 @@ library(ggplot2)
 comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Trajectories (CSCW 2018)/Data/gravity-spy-comments_2018-02-10.csv")
 
 # Get promotion information "2018-02-10 01:51:13 UTC"
-promotion_info <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution Paper ()/Data Analysis/SLM/user_promotion_02062018.csv")
+promotion_info <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/user_promotion_02062018.csv")
 joinedinfo <- promotion_info[which(promotion_info$workflow_name == '1: Neutron Star Mountain'),]
 joinedinfo$first_class <- as.POSIXct(joinedinfo$first_class, format="%Y-%m-%d %H:%M:%S")
 
 
 # Bigrams
-bigram_comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution Paper ()/Data Analysis/Data Files/bigram_comments.csv", 
+bigram_comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/bigram_comments.csv", 
      col_types = cols(X1 = col_skip()))
 
 ## Board information
@@ -85,7 +85,7 @@ bigrams_monthly_count <- bigram_comments %>% group_by(month=floor_date(comment_c
   summarize(total_bigrams=length(bigram),unique_bigrams=length(unique(bigram)))
 
 
-#### Create Monthly Corpus
+#### Create names for Corpus
 # https://cran.r-project.org/web/packages/magicfor/vignettes/magicfor.html
 
 # Creates a list of named months (e.g., month1) for each month represented in the project. To be used in the next loop
@@ -125,15 +125,15 @@ detach(package:plyr)
 library(dplyr)
 #dfList <- list(df1=month1, df2=month2)
 
-Compute_Month_Probability <- function(month,grp.var){
-  lenmon = nrow(month)
-  month %>% group_by_(grp.var) %>%
-      summarize(occurrence=length(grp.var),
-                lenmon = lenmon,
-                probability_occur = occurrence/lenmon,
-                log_probability_occur = log(probability_occur)
-      )
-}
+# Compute_Month_Probability <- function(month,grp.var){
+#   lenmon = nrow(month)
+#   month %>% group_by_(grp.var) %>%
+#       summarize(occurrence=length(grp.var),
+#                 lenmon = lenmon,
+#                 probability_occur = occurrence/lenmon,
+#                 log_probability_occur = log(probability_occur)
+#       )
+# }
 
 # for (i in new_names_list){ 
 #   newname <- paste("probability",i,sep=".")
@@ -152,10 +152,6 @@ library(dplyr)
 
 # For each month compute the probability of the term occurring in a month. 
 ## Simply the number of times the bigram used/no. bigrams in corpus
-
-
-
-
 month1_probability <- month1 %>% group_by(bigram) %>%
    summarize(occurrence=length(bigram),probability_occur = length(bigram)/nrow(month1),log_probability_occur = log(probability_occur) ) # Produces a dataframe with probabilities for each bigram of occurring in that month
 
