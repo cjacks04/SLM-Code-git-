@@ -28,7 +28,6 @@ promotion_info <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Present
 joinedinfo <- promotion_info[which(promotion_info$workflow_name == '1: Neutron Star Mountain'),]
 joinedinfo$first_class <- as.POSIXct(joinedinfo$first_class, format="%Y-%m-%d %H:%M:%S")
 
-
 # Bigrams
 bigram_comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/bigram_comments.csv", 
      col_types = cols(X1 = col_skip()))
@@ -169,7 +168,6 @@ names(month2_pc)[7]<-"log_probability_occur.pm"
 month2_p[ , 15:17][is.na(month2_p[ , 15:17] ) ] = 0 
 month2_p$month <- "Month 2"
 
-
 month3_probability <- month3 %>% group_by(bigram) %>%
   summarize(occurrence=length(bigram),probability_occur = length(bigram)/nrow(month3),log_probability_occur = log(probability_occur) )
 month3_p <- merge(month3,month2_probability, by=("bigram"),all.x=TRUE)
@@ -243,7 +241,7 @@ month9_p$month <- "Month 9"
 month10_probability <- month10 %>% group_by(bigram) %>%
   summarize(occurrence=length(bigram),probability_occur = length(bigram)/nrow(month10),log_probability_occur = log(probability_occur) )
 month10_p <- merge(month10,month9_probability, by=("bigram"),all.x=TRUE)
-month10_pc <- merge(month10_probability,month09_probability, by=("bigram"),all.x=TRUE) # a community probability 
+month10_pc <- merge(month10_probability,month9_probability, by=("bigram"),all.x=TRUE) # a community probability 
 names(month10_pc)[5]<-"occurrence.pm"
 names(month10_pc)[6]<-"probability_occur.pm"
 names(month10_pc)[7]<-"log_probability_occur.pm"
