@@ -170,9 +170,6 @@ month2_p[ , 15:17][is.na(month2_p[ , 15:17] ) ] = 0
 month2_p$month <- "Month 2"
 
 
-
-
-
 month3_probability <- month3 %>% group_by(bigram) %>%
   summarize(occurrence=length(bigram),probability_occur = length(bigram)/nrow(month3),log_probability_occur = log(probability_occur) )
 month3_p <- merge(month3,month2_probability, by=("bigram"),all.x=TRUE)
