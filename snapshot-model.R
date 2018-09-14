@@ -390,7 +390,13 @@ names(month24_pc)[7]<-"log_probability_occur.pm"
 month24_p[ , 15:17][is.na(month24_p[ , 15:17] ) ] = 0
 month24_p$month <- "Month 24"
 
+
+
+
+
+##### Creating user level summaries #####
 library(plyr)
+
 
 userpost_m2 <- ddply(month2_p, c("comment_user_login","comment_id"), summarize,
 				bigram_count = length(unique(bigram)),

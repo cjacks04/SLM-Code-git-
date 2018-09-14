@@ -1,18 +1,15 @@
-# Calculate quasi-promotion for Gravity Spy
+# Calculate joindate for Gravity Spy
 
 library(plyr)
-library(dplyr)
 library(readr)
 
 #https://www.zooniverse.org/lab/1104/data-exports
+# computed using gravity-spy-classifications.csv on INSPIRE dropbox
 
 class <- read_csv() # classification data taken from northwestern (available on dropbox)
-class <- class[which(!is.na(class$user_id)),]
-class<- class[which(!class$workflow_name %in% c(
-	"Apprentice - No Training - Defunct",
-	"Beginner 4",
-	"workflow assignment split experiment workflow")),]
 
-user_promotion <- ddply(class, c("user_name","user_id","workflow_name"), summarise,
+user_join <- ddply(class, c("user_name","user_id"), summarise,
 					first_class = min(created_at)
 					)
+write.csv(user_join,"~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/joindate.csv")
+
