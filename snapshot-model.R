@@ -19,14 +19,15 @@ library(dplyr)
 library(lubridate)
 library(readr)
 library(ggplot2)
+library(data.table)
 
 # Code to import comment file and make comments bi-grams (see code from Amruta)
 comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Trajectories (CSCW 2018)/Data/gravity-spy-comments_2018-02-10.csv")
 
 # Get promotion information "2018-02-10 01:51:13 UTC"
-promotion_info <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/user_promotion_02062018.csv")
-joinedinfo <- promotion_info[which(promotion_info$workflow_name == '1: Neutron Star Mountain'),]
-joinedinfo$first_class <- as.POSIXct(joinedinfo$first_class, format="%Y-%m-%d %H:%M:%S")
+joindate <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/joindate.csv",
+  col_types = cols(X1 = col_skip()))
+joindate$first_class <- as.POSIXct(joindate$first_class, format="%Y-%m-%d %H:%M:%S")
 
 # Bigrams
 bigram_comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/bigram_comments.csv", 
@@ -44,13 +45,12 @@ comments_user_info <- comments %>% group_by(comment_user_id,comment_user_login) 
             first_comment = min(comment_created_at),
             last_comment = max(comment_created_at)
   )
+comments_user_info$first_comment <- as.POSIXct(comments_user_info$first_comment, format="%Y-%m-%d %H:%M:%S")
 
-user_info <- merge(joinedinfo,comments_user_info, by.x="user_id", by.y="comment_user_id")
-user_info$time_to_post <- user_info$first_comment - user_info$first_class
-remove(joinedinfo,comments_user_info) 
-
-
-
+user_info <- merge(joindate,comments_user_info, by.x="user_id", by.y="comment_user_id")
+user_info$days_to_post <- as.Date(as.character(user_info$first_comment), format="%Y-%m-%d")-
+                  as.Date(as.character(user_info$first_class), format="%Y-%m-%d")
+remove(joindate,comments_user_info) 
 
 ### Unigrams Month/Comments
 #comments$comment_body2 <- gsub('http\\S+\\s*', "", comments$comment_body) #remove links
@@ -82,7 +82,7 @@ bigrams_appearance_count <- bigram_comments %>% group_by(bigram) %>%
 
 bigrams_monthly_count <- bigram_comments %>% group_by(month=floor_date(comment_created_at, "month")) %>%
   summarize(total_bigrams=length(bigram),unique_bigrams=length(unique(bigram)))
-
+bigrams_monthly_count <- as.data.table(bigrams_monthly_count)[, monthnumber := .GRP, by = month]
 
 #### Create names for Corpus
 # https://cran.r-project.org/web/packages/magicfor/vignettes/magicfor.html
