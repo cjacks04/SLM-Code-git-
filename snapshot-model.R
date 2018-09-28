@@ -20,18 +20,19 @@ library(lubridate)
 library(readr)
 library(ggplot2)
 library(data.table)
+library(tidytext)
 
 # Code to import comment file and make comments bi-grams (see code from Amruta)
-comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Trajectories (CSCW 2018)/Data/gravity-spy-comments_2018-02-10.csv")
-
+comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/gravityspy_prep2.csv")
 # Get promotion information "2018-02-10 01:51:13 UTC"
 joindate <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/joindate.csv",
   col_types = cols(X1 = col_skip()))
 joindate$first_class <- as.POSIXct(joindate$first_class, format="%Y-%m-%d %H:%M:%S")
 
-# Bigrams
-bigram_comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/bigram_comments.csv", 
-     col_types = cols(X1 = col_skip()))
+# compute bigrams from comment dataframe
+bigram_comments <- comments %>%
+    unnest_tokens(bigram, filtered_words, token = "ngrams", n = 2)
+remove(comments)
 
 ## Board information
 board_summary_monthly_count <- comments %>% group_by(board_title,month=floor_date(comment_created_at, "month")) %>%
@@ -68,9 +69,6 @@ remove(joindate,comments_user_info)
 
 #comments$comment_body2 <- as.character(comments$comment_body2)
 
-## Gets unigrams for every post and counts
-#unigram_comments <- comments %>%
-#     unnest_tokens(bigram, comment_body2, token = "ngrams", n = 1)
 
 
 #### Bigram Specific
