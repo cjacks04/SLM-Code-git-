@@ -32,7 +32,6 @@ joindate$first_class <- as.POSIXct(joindate$first_class, format="%Y-%m-%d %H:%M:
 # compute bigrams from comment dataframe
 bigram_comments <- comments %>%
     unnest_tokens(bigram, filtered_words, token = "ngrams", n = 2)
-remove(comments)
 
 ## Board information
 board_summary_monthly_count <- comments %>% group_by(board_title,month=floor_date(comment_created_at, "month")) %>%
@@ -51,7 +50,7 @@ comments_user_info$first_comment <- as.POSIXct(comments_user_info$first_comment,
 user_info <- merge(joindate,comments_user_info, by.x="user_id", by.y="comment_user_id")
 user_info$days_to_post <- as.Date(as.character(user_info$first_comment), format="%Y-%m-%d")-
                   as.Date(as.character(user_info$first_class), format="%Y-%m-%d")
-remove(joindate,comments_user_info) 
+remove(joindate,comments_user_info,comments) 
 
 ### Unigrams Month/Comments
 #comments$comment_body2 <- gsub('http\\S+\\s*', "", comments$comment_body) #remove links
