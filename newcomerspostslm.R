@@ -8,7 +8,7 @@ library(sqldf)
 user_info$newcomerend <- as.Date(as.character(user_info$first_class), format="%Y-%m-%d") + 30
 user_info$newcomerends <- as.POSIXct(user_info$first_class, format="%Y-%m-%d %H:%M:%S") + 2591000 
 
-user_info$newcomerende <- format(as.Date(user_info$first_class), "%Y-%m")
+user_info$newcomerend <- format(as.Date(user_info$first_class), "%Y-%m")
 bigrams_monthly_count$monthe <- format(as.Date(bigrams_monthly_count$month), "%Y-%m")
 
 user_info <- merge(user_info, bigrams_monthly_count[, c("monthe","monthnumber")],
