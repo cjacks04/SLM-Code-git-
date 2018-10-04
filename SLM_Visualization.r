@@ -17,7 +17,7 @@ newcomer_probability$probability <- NA
 for(i in 1:nrow(newcomer_probability))
 {
   newcomer_probability$probability[i] <- 
-    mean(month2_p$probability_occur[month2_p$comment_id == newcomer_probability$comment_id[i]], na.rm = TRUE)
+    mean(month2_p$probability_occur[month2_p$comment_id == newcomer_probability$comment_id[i]])
 }
 
 for(i in 1:nrow(newcomer_probability))

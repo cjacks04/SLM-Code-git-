@@ -29,12 +29,11 @@ joindate <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations
   col_types = cols(X1 = col_skip()))
 joindate$first_class <- as.POSIXct(joindate$first_class, format="%Y-%m-%d %H:%M:%S")
 
+
 # compute bigrams from comment dataframe
 bigram_comments <- comments %>%
-    unnest_tokens(bigram, filtered_words, token = "ngrams", n = 2)
-bigram_comments <- bigram_comments[which(is.na(bigram_comments$bigram)),]
-
-
+    unnest_tokens(bigram, filtered_words, token = "ngrams", n = 1)
+#bigram_comments <- bigram_comments[which(is.na(bigram_comments$bigram)),]
 
 ## Board information
 board_summary_monthly_count <- comments %>% group_by(board_title,month=floor_date(comment_created_at, "month")) %>%
