@@ -13,7 +13,7 @@ detach_package <- function(pkg, character.only = FALSE)
     detach(search_item, unload = TRUE, character.only = TRUE)
   }
 }
-detach_package(plyr)
+#detach_package(plyr)
 
 library(dplyr)
 library(lubridate)
@@ -23,9 +23,9 @@ library(data.table)
 library(tidytext)
 
 # Code to import comment file and make comments bi-grams (see code from Amruta)
-comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/gravityspy_prep2.csv")
+comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (GROUP)/Data Analysis/Data Files/gravityspy_prep2.csv")
 # Get promotion information "2018-02-10 01:51:13 UTC"
-joindate <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution ()/Data Analysis/Data Files/joindate.csv",
+joindate <- read_csv("/Users/coreyjackson/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (GROUP)/Data Analysis/Data Files/joindate.csv",
   col_types = cols(X1 = col_skip()))
 joindate$first_class <- as.POSIXct(joindate$first_class, format="%Y-%m-%d %H:%M:%S")
 
