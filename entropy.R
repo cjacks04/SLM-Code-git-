@@ -31,7 +31,8 @@ p <- p/sum(p); sum(-p*log(p))
 
 # https://cran.r-project.org/web/packages/entropy/entropy.pdf 
 # http://www.cs.rochester.edu/u/james/CSC248/Lec6.pdf
-
+# https://www.youtube.com/watch?v=ErfnhcEV1O8 
+# https://www.youtube.com/watch?v=IPkRVpXtbdY 
 
 
 library(dplyr)
