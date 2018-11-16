@@ -9,6 +9,23 @@ entropy(y, method="ML") # Entropy = 1.676988
 z = c(1, 1, 3, 1, 0, 0, 20, 10, 1, 2, 0) 
 entropy(z, method="ML") # Entropy = 1.416828 
 
+##### Another Example ###############
+
+library(entropy)
+v = c(0,4,3,6,7,3,2,3,4,5)
+entropy(discretize(v, numBins = 8, r = c(0,7))) # 1.834372
+
+# In another way
+p <- table(v)
+p
+#0 2 3 4 5 6 7 
+#1 1 3 2 1 1 1 
+v
+#[1] 0 4 3 6 7 3 2 3 4 5
+p <- p/sum(p); sum(-p*log(p))
+#[1] 1.834372
+
+
 # Large values of entropy mean the more "diverse" the dataset is. 
 #################################
 
