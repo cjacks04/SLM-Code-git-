@@ -1,0 +1,922 @@
+---
+title: "Entropy Language Analysis"
+author: "Corey Jackson"
+date: "`r Sys.time()`"
+output: 
+  html_document:
+    fig_caption: yes
+    theme: spacelab #sandstone #spacelab #flatly
+    highlight: pygments
+    toc: FALSE
+    toc_depth: 2
+    toc_float:
+      smooth_scroll: FALSE
+---
+
+##  {.tabset}
+
+```{r setup2, include=FALSE, warning=FALSE,message=FALSE}
+
+library(lubridate)
+library(readr)
+library(data.table)
+library(tidytext)
+library(entropy)
+library(reshape2)
+library(ggplot2)
+library(scales)
+library(dplyr)
+library(tm)
+library(rapport)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(corpus)
+library(cowplot)
+## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column    
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+
+# A function for calculating entropy. Takes only rows as values
+entfun <- function(x)
+{
+ 	entropy(x, method = "ML")
+}
+
+theme_Publication <- function(base_size=14, base_family="helvetica") {
+      library(grid)
+      library(ggthemes)
+      (theme_foundation(base_size=base_size, base_family=base_family)
+       + theme(plot.title = element_text(face = "bold",
+                                         size = rel(1.2), hjust = 0.5),
+               text = element_text(),
+               panel.background = element_rect(colour = NA),
+               plot.background = element_rect(colour = NA),
+               panel.border = element_rect(colour = NA),
+               axis.title = element_text(face = "bold",size = rel(1)),
+               axis.title.y = element_text(angle=90,vjust =2),
+               axis.title.x = element_text(vjust = -0.2),
+               axis.text = element_text(), 
+               axis.line = element_line(colour="black"),
+               axis.ticks = element_line(),
+               panel.grid.major = element_line(colour="#f0f0f0"),
+               panel.grid.minor = element_blank(),
+               legend.key = element_rect(colour = NA),
+               legend.position = "bottom",
+               legend.direction = "horizontal",
+               legend.key.size= unit(0.2, "cm"),
+               legend.margin = unit(0, "cm"),
+               legend.title = element_text(face="italic"),
+               plot.margin=unit(c(10,5,5,5),"mm"),
+               strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
+               strip.text = element_text(face="bold")
+          ))
+      
+}
+
+scale_fill_Publication <- function(...){
+      library(scales)
+      discrete_scale("fill","Publication",manual_pal(values = c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#a6cee3","#fb9a99","#984ea3","#ffff33")), ...)
+
+}
+
+scale_colour_Publication <- function(...){
+      library(scales)
+      discrete_scale("colour","Publication",manual_pal(values = c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#a6cee3","#fb9a99","#984ea3","#ffff33")), ...)
+
+}
+```
+
+```{r, include=FALSE, warning=FALSE,message=FALSE}
+
+# Code to import comment file and make comments bi-grams (see code from Amruta)
+comments <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (GROUP)/Data Analysis/Data Files/gravityspy_prep2.csv")
+# Get promotion information "2018-02-10 01:51:13 UTC"
+joindate <- read_csv("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (GROUP)/Data Analysis/Data Files/joindate.csv",
+  col_types = cols(X1 = col_skip()))
+joindate$first_class <- as.POSIXct(joindate$first_class, format="%Y-%m-%d %H:%M:%S")
+malletwords <- scan("~/Dropbox/INSPIRE/Papers & Presentations/Language Evolution (GROUP)/Data Analysis/mallet.txt", character(), quote = "")
+malletwords <- malletwords[which(!malletwords %in% c("zero","example","novel","help","none","above","q"))]
+comments_original <- comments
+#clean up
+# remove grammar/punctuation
+comments$filtered_wordsnew <- tolower(gsub('[[:punct:]]', ' ', comments$filtered_words))
+#stopping
+comments$filtered_wordsnew <- removeWords(comments$filtered_wordsnew, c(stopwords("english"),malletwords))
+
+# remove deleted comments
+comments <- comments[which(comments$filtered_wordsnew != c("comment delete")),]
+comments <- comments[!(comments$filtered_wordsnew  %in% c(""," ","  ","   ","    ","     ","      ")), ] # some comments were all stop words
+
+#rename old comment column
+comments$filtered_words <- NULL
+comments$filtered_words <- comments$filtered_wordsnew
+comments$filtered_wordsnew <- NULL
+
+# compute unigrams from comment dataframe
+unigram_comments <- comments %>% unnest_tokens(unigram, filtered_words, token = "ngrams", n = 1)
+
+# get monthly demographics for months
+summary_monthly_count <- comments %>% group_by(month=floor_date(comment_created_at, "month")) %>% summarize(total_comments=length(comment_user_login),total_users=length(unique(comment_user_login)),unigrams = sum(sapply(strsplit(filtered_words, " "), length)))
+
+# get unique contribution data for users
+comments_user_info <- comments %>% group_by(comment_user_id,comment_user_login) %>% summarize(comments_posted =length(comment_user_id), first_comment = min(comment_created_at),last_comment = max(comment_created_at))
+
+comments_user_info$first_comment <- as.POSIXct(comments_user_info$first_comment, format="%Y-%m-%d %H:%M:%S")
+    
+user_info <- merge(joindate,comments_user_info, by.x="user_id", by.y="comment_user_id")
+user_info$days_to_post <- as.Date(as.character(user_info$first_comment), format="%Y-%m-%d")-
+                  as.Date(as.character(user_info$first_class), format="%Y-%m-%d")
+user_info$commenttenure <- as.Date(as.character(user_info$last_comment), format="%Y-%m-%d")-
+                  as.Date(as.character(user_info$first_comment), format="%Y-%m-%d")
+remove(joindate,comments_user_info) 
+
+# get unique contribution for unigrams
+
+# occurrence of the bigram in a month and counts used for that month
+unigrams_appearance_monthcount <- unigram_comments %>% group_by(month=floor_date(comment_created_at, "2 weeks"),unigram) %>% summarize(total_unigrams=length(unigram)) 
+
+months <- as.data.frame(unique(unigrams_appearance_monthcount$month))
+names(months)[1] <- "month"
+
+# some terms are used everymonth...need to construct new dataframe. Replicate 24 dates and all words
+datesuni <- as.data.frame(rep(months$month,length(unique(unigram_comments$unigram))))
+uniqueuni <- unique(unigram_comments$unigram)
+wordsuni <- as.data.frame(rep(uniqueuni,length(months$month)))
+names(wordsuni)[1] <- "unigram" 
+wordsuni <- wordsuni[order(wordsuni$unigram),]
+wordsbind <-  cbind(datesuni,wordsuni)
+names(wordsbind)[1] <- "month" 
+names(wordsbind)[2] <- "unigram" 
+remove(wordsuni,datesuni,uniqueuni)
+# Get users joining monthly
+months2 <- months
+months2$month <- format(as.Date(months2$month), "%Y-%m")
+
+startcommentdate <- as.data.frame(table(format(as.Date(user_info$first_comment), "%Y-%m")))
+names(startcommentdate)[1] <- "month"
+names(startcommentdate)[2] <- "usercount"
+startcommentdate <- merge(months2,startcommentdate, by="month", all.x=TRUE)
+startcommentdate$usercount[is.na(startcommentdate$usercount)] <- 0
+remove(months2)
+
+## Where does this belong???
+startcommentdate <- as.data.table(startcommentdate)[, monthnumber := .GRP, by = month]
+
+# merge occurrences
+unigrams_appearance_monthcount <- merge(wordsbind, unigrams_appearance_monthcount, by=c("unigram","month"),all.x = TRUE)
+# replce no use months with 0
+unigrams_appearance_monthcount$total_unigrams[is.na(unigrams_appearance_monthcount$total_unigrams)] <- 0
+
+unigrams_appearance_monthcount <- unigrams_appearance_monthcount %>% group_by(unigram) %>% mutate(cumunigrams = cumsum(total_unigrams))
+
+unigrams_appearance_monthcount <- unigrams_appearance_monthcount %>% group_by(unigram) %>% arrange(month, .by_group = TRUE) %>% mutate(pct_change = (cumunigrams/lag(cumunigrams) - 1) * 100)
+
+unigrams_appearance_monthcount <- as.data.table(unigrams_appearance_monthcount)
+unigrams_appearance_monthcount[, usestart := sequence(.N), by = c("unigram")]
+unigrams_appearance_monthcount <- as.data.frame(unigrams_appearance_monthcount)
+
+# Unique bigrams and counts of use in the project.
+unigrams_appearance_count <- unigram_comments %>% group_by(unigram) %>% summarize(total_unigrams=length(unigram))  
+
+# Monthly summary of bigrams and counts of use in the project.
+unigrams_monthly_count <- unigram_comments %>% group_by(month=floor_date(comment_created_at, "month")) %>% summarize(total_unigrams=length(unigram),unique_unigrams=length(unique(unigram)),comments = length(unique(comment_id)))
+
+unigrams_monthly_count$comment_count <- ave(unigrams_monthly_count$comments ,FUN=cumsum)
+unigrams_monthly_count <- as.data.table(unigrams_monthly_count)[, monthnumber := .GRP, by = month]
+unigrams_monthly_count <- cbind(unigrams_monthly_count,startcommentdate)
+unigrams_monthly_count$usercum <- ave(unigrams_monthly_count$usercount ,FUN=cumsum)
+unigrams_monthly_count <- as.data.frame(unigrams_monthly_count)
+unigrams_monthly_count <- unigrams_monthly_count[ -c(7) ]
+
+# combine monthly with summary_monthly_count
+unigrams_monthly_count <- cbind(unigrams_monthly_count, summary_monthly_count)
+unigrams_monthly_count <- unigrams_monthly_count[,-c(8,10)]
+remove(summary_monthly_count)
+```
+
+
+```{r, include=FALSE, warning=FALSE,message=FALSE}
+
+# create list holders for vectors and dataframes to populate
+
+# Creates a list of named months (e.g., month1) for each month represented in the project. To be used in the next loop
+new_names <- c()
+for (i in 1:nrow(unigrams_monthly_count)){
+  new_names[i] <- (paste("month",i,sep=""))
+}
+
+# Creates a list of named months (e.g., month1_single)  for each month represented in the project. To be used in the next loop
+new_names2 <- c()
+for (i in 1:nrow(unigrams_monthly_count)){
+  new_names2[i] <- (paste("month",i,"_single",sep=""))
+}
+
+new_names_list <- as.list(new_names)
+
+# Creates a list of named months (e.g., month1probability)  for each month represented in the project. To be used in the next loop
+prob_names <- c()
+for (i in 1:nrow(unigrams_monthly_count)){
+  prob_names[i] <- (paste("month",i,"probability",sep=""))
+}
+
+# Creates a new dataframe (e.g., month1) containing each unigram and the user who created the unigram (aggregated over months so that final month has all unigrams includes dublicates)
+Months <-unique(floor_date(unigram_comments$comment_created_at, "month"))
+    for (i in 1:length(Months)){ 
+    assign(new_names[i],unigram_comments[floor_date(unigram_comments$comment_created_at, "month") <= Months[i],])
+    }  
+
+# Creates a new dataframe (e.g., month1_single) containing each unigram used in that month
+for (i in 1:length(Months)){ 
+  assign(new_names2[i],unigram_comments[floor_date(unigram_comments$comment_created_at, "month") == Months[i],])
+} 
+
+
+# adding month number to dataframes
+month1$month <- as.numeric(1)
+month2$month <- as.numeric(2)
+month3$month <- as.numeric(3)
+month4$month <- as.numeric(4)
+month5$month <- as.numeric(5)
+month6$month <- as.numeric(6)
+month7$month <- as.numeric(7)
+month8$month <- as.numeric(8)
+month9$month <- as.numeric(9)
+month10$month <- as.numeric(10)
+month11$month <- as.numeric(11)
+month12$month <- as.numeric(12)
+month13$month <- as.numeric(13)
+month14$month <- as.numeric(14)
+month15$month <- as.numeric(15)
+month16$month <- as.numeric(16)
+month17$month <- as.numeric(17)
+month18$month <- as.numeric(18)
+month19$month <- as.numeric(19)
+month20$month <- as.numeric(20)
+month21$month <- as.numeric(21)
+month22$month <- as.numeric(22)
+month23$month <- as.numeric(23)
+month24$month <- as.numeric(24)
+
+
+# compute monthly entropy
+monthsd <- rbind(month1,month2,month3,month4,month5,month6,month7,month8,month9,month10,
+                 month11,month12,month13,month14,month15,month16,month17,month18,month19,
+                 month20,month21,month22,month23,month24)
+monthcast <- dcast(monthsd, month ~ unigram)
+month_names <- monthcast[ , 1]
+monthe <- monthcast[ , -1]
+monthuse <- apply(monthe, MARGIN = 1, FUN = function(x) entfun(x))
+monthuse <- as.data.frame(cbind(month_names,monthuse))
+
+remove(monthe,month_names)
+
+# Compute user
+cast2d <- dcast(month2, comment_user_login ~ unigram)
+cast3d <- dcast(month3, comment_user_login ~ unigram)
+cast4d <- dcast(month4, comment_user_login ~ unigram)
+cast5d <- dcast(month5, comment_user_login ~ unigram)
+cast6d <- dcast(month6, comment_user_login ~ unigram)
+cast7d <- dcast(month7, comment_user_login ~ unigram)
+cast8d <- dcast(month8, comment_user_login ~ unigram)
+cast9d <- dcast(month9, comment_user_login ~ unigram)
+cast10d <- dcast(month10, comment_user_login ~ unigram)
+cast11d <- dcast(month11, comment_user_login ~ unigram)
+cast12d <- dcast(month12, comment_user_login ~ unigram)
+cast13d <- dcast(month13, comment_user_login ~ unigram)
+cast14d <- dcast(month14, comment_user_login ~ unigram)
+cast15d <- dcast(month15, comment_user_login ~ unigram)
+cast16d <- dcast(month16, comment_user_login ~ unigram)
+cast17d <- dcast(month17, comment_user_login ~ unigram)
+cast18d <- dcast(month18, comment_user_login ~ unigram)
+cast19d <- dcast(month19, comment_user_login ~ unigram)
+cast20d <- dcast(month20, comment_user_login ~ unigram)
+cast21d <- dcast(month21, comment_user_login ~ unigram)
+cast22d <- dcast(month22, comment_user_login ~ unigram)
+cast23d <- dcast(month23, comment_user_login ~ unigram)
+cast24d <- dcast(month24, comment_user_login ~ unigram)
+
+# Extracting usernames
+c2_names <- cast2d[ , 1]
+c3_names <- cast3d[ , 1]
+c4_names <- cast4d[ , 1]
+c5_names <- cast5d[ , 1]
+c6_names <- cast6d[ , 1]
+c7_names <- cast7d[ , 1]
+c8_names <- cast8d[ , 1]
+c9_names <- cast9d[ , 1]
+c10_names <- cast10d[ , 1]
+c11_names <- cast11d[ , 1]
+c12_names <- cast12d[ , 1]
+c13_names <- cast13d[ , 1]
+c14_names <- cast14d[ , 1]
+c15_names <- cast15d[ , 1]
+c16_names <- cast16d[ , 1]
+c17_names <- cast17d[ , 1]
+c18_names <- cast18d[ , 1]
+c19_names <- cast19d[ , 1]
+c20_names <- cast20d[ , 1]
+c21_names <- cast21d[ , 1]
+c22_names <- cast22d[ , 1]
+c23_names <- cast23d[ , 1]
+c24_names <- cast24d[ , 1]
+
+# removing user names. Now a matrix of terms
+cast2e <- cast2d[ , -1]
+cast3e <- cast3d[ , -1]
+cast4e <- cast4d[ , -1]
+cast5e <- cast5d[ , -1]
+cast6e <- cast6d[ , -1]
+cast7e <- cast7d[ , -1]
+cast8e <- cast8d[ , -1]
+cast9e <- cast9d[ , -1]
+cast10e <- cast10d[ , -1]
+cast11e <- cast11d[ , -1]
+cast12e <- cast12d[ , -1]
+cast13e <- cast13d[ , -1]
+cast14e <- cast14d[ , -1]
+cast15e <- cast15d[ , -1]
+cast16e <- cast16d[ , -1]
+cast17e <- cast17d[ , -1]
+cast18e <- cast18d[ , -1]
+cast19e <- cast19d[ , -1]
+cast20e <- cast20d[ , -1]
+cast21e <- cast21d[ , -1]
+cast22e <- cast22d[ , -1]
+cast23e <- cast23d[ , -1]
+cast24e <- cast24d[ , -1]
+
+
+##### ENTROPY COMPUTE MONTH
+# compute entropy for row in each data frame
+entropyuse2 <- apply(cast2e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse3 <- apply(cast3e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse4 <- apply(cast4e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse5 <- apply(cast5e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse6 <- apply(cast6e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse7 <- apply(cast7e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse8 <- apply(cast8e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse9 <- apply(cast9e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse10 <- apply(cast10e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse11 <- apply(cast11e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse12 <- apply(cast12e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse13 <- apply(cast13e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse14 <- apply(cast14e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse15 <- apply(cast15e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse16 <- apply(cast16e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse17 <- apply(cast17e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse18 <- apply(cast18e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse19 <- apply(cast19e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse20 <- apply(cast20e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse21 <- apply(cast21e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse22 <- apply(cast22e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse23 <- apply(cast23e, MARGIN = 1, FUN = function(x) entfun(x))
+entropyuse24 <- apply(cast24e, MARGIN = 1, FUN = function(x) entfun(x))
+
+# Attaching usernames to entropy
+user_entropy2 <- data.frame(c2_names, entropyuse2)
+colnames(user_entropy2) <- c("username", "entropy")
+user_entropy2$month <- "month2"
+
+user_entropy3 <- data.frame(c3_names, entropyuse3)
+colnames(user_entropy3) <- c("username", "entropy")
+user_entropy3$month <- "month3"
+
+user_entropy4 <- data.frame(c4_names, entropyuse4)
+colnames(user_entropy4) <- c("username", "entropy")
+user_entropy4$month <- "month4"
+
+user_entropy5 <- data.frame(c5_names, entropyuse5)
+colnames(user_entropy5) <- c("username", "entropy")
+user_entropy5$month <- "month5"
+
+user_entropy6 <- data.frame(c6_names, entropyuse6)
+colnames(user_entropy6) <- c("username", "entropy")
+user_entropy6$month <- "month6"
+
+user_entropy7 <- data.frame(c7_names, entropyuse7)
+colnames(user_entropy7) <- c("username", "entropy")
+user_entropy7$month <- "month7"
+
+user_entropy8 <- data.frame(c8_names, entropyuse8)
+colnames(user_entropy8) <- c("username", "entropy")
+user_entropy8$month <- "month8"
+
+user_entropy9 <- data.frame(c9_names, entropyuse9)
+colnames(user_entropy9) <- c("username", "entropy")
+user_entropy9$month <- "month9"
+
+user_entropy10 <- data.frame(c10_names, entropyuse10)
+colnames(user_entropy10) <- c("username", "entropy")
+user_entropy10$month <- "month10"
+
+user_entropy11 <- data.frame(c11_names, entropyuse11)
+colnames(user_entropy11) <- c("username", "entropy")
+user_entropy11$month <- "month11"
+
+user_entropy12 <- data.frame(c12_names, entropyuse12)
+colnames(user_entropy12) <- c("username", "entropy")
+user_entropy12$month <- "month12"
+
+user_entropy13 <- data.frame(c13_names, entropyuse13)
+colnames(user_entropy13) <- c("username", "entropy")
+user_entropy13$month <- "month13"
+
+user_entropy14 <- data.frame(c14_names, entropyuse14)
+colnames(user_entropy14) <- c("username", "entropy")
+user_entropy14$month <- "month14"
+
+user_entropy15 <- data.frame(c15_names, entropyuse15)
+colnames(user_entropy15) <- c("username", "entropy")
+user_entropy15$month <- "month15"
+
+user_entropy16 <- data.frame(c16_names, entropyuse16)
+colnames(user_entropy16) <- c("username", "entropy")
+user_entropy16$month <- "month16"
+
+user_entropy17 <- data.frame(c17_names, entropyuse17)
+colnames(user_entropy17) <- c("username", "entropy")
+user_entropy17$month <- "month17"
+
+user_entropy18 <- data.frame(c18_names, entropyuse18)
+colnames(user_entropy18) <- c("username", "entropy")
+user_entropy18$month <- "month18"
+
+user_entropy19 <- data.frame(c19_names, entropyuse19)
+colnames(user_entropy19) <- c("username", "entropy")
+user_entropy19$month <- "month19"
+
+user_entropy20 <- data.frame(c20_names, entropyuse20)
+colnames(user_entropy20) <- c("username", "entropy")
+user_entropy20$month <- "month20"
+
+user_entropy21 <- data.frame(c21_names, entropyuse21)
+colnames(user_entropy21) <- c("username", "entropy")
+user_entropy21$month <- "month21"
+
+user_entropy22 <- data.frame(c22_names, entropyuse22)
+colnames(user_entropy22) <- c("username", "entropy")
+user_entropy22$month <- "month22"
+
+user_entropy23 <- data.frame(c23_names, entropyuse23)
+colnames(user_entropy23) <- c("username", "entropy")
+user_entropy23$month <- "month23"
+
+user_entropy24 <- data.frame(c24_names, entropyuse24)
+colnames(user_entropy24) <- c("username", "entropy")
+user_entropy24$month <- "month24"
+
+user_entropy <- rbind(user_entropy2, user_entropy3, user_entropy4, user_entropy5, user_entropy6, user_entropy7, user_entropy8, user_entropy9, user_entropy10, user_entropy11,user_entropy12, user_entropy13, user_entropy14, user_entropy15, user_entropy16, user_entropy17, user_entropy18, user_entropy19, user_entropy20, user_entropy21,user_entropy22, user_entropy23, user_entropy24)
+
+user_entropyd <- dcast(user_entropy, username ~ month, value.var = c("entropy"))
+
+remove(user_entropy2, user_entropy3, user_entropy4, user_entropy5, user_entropy6, 
+                       user_entropy7, user_entropy8, user_entropy9, user_entropy10, user_entropy11,
+                       user_entropy12, user_entropy13, user_entropy14, user_entropy15, user_entropy16,
+                       user_entropy17, user_entropy18, user_entropy19, user_entropy20, user_entropy21,
+                       user_entropy22, user_entropy23, user_entropy24)
+
+# Change data to long format
+cast2un <- melt(cast2d, id = c("comment_user_login"))
+cast3un <- melt(cast3d, id = c("comment_user_login"))
+cast4un <- melt(cast4d, id = c("comment_user_login"))
+cast5un <- melt(cast5d, id = c("comment_user_login"))
+cast6un <- melt(cast6d, id = c("comment_user_login"))
+cast7un <- melt(cast7d, id = c("comment_user_login"))
+cast8un <- melt(cast8d, id = c("comment_user_login"))
+cast9un <- melt(cast9d, id = c("comment_user_login"))
+cast10un <- melt(cast10d, id = c("comment_user_login"))
+cast11un <- melt(cast11d, id = c("comment_user_login"))
+cast12un <- melt(cast12d, id = c("comment_user_login"))
+cast13un <- melt(cast13d, id = c("comment_user_login"))
+cast14un <- melt(cast14d, id = c("comment_user_login"))
+cast15un <- melt(cast15d, id = c("comment_user_login"))
+cast16un <- melt(cast16d, id = c("comment_user_login"))
+cast17un <- melt(cast17d, id = c("comment_user_login"))
+cast18un <- melt(cast18d, id = c("comment_user_login"))
+cast19un <- melt(cast19d, id = c("comment_user_login"))
+cast20un <- melt(cast20d, id = c("comment_user_login"))
+cast21un <- melt(cast21d, id = c("comment_user_login"))
+cast22un <- melt(cast22d, id = c("comment_user_login"))
+cast23un <- melt(cast23d, id = c("comment_user_login"))
+cast24un <- melt(cast24d, id = c("comment_user_login"))
+
+# Clean up to console
+rm(list=ls(pattern= "\\_single"))
+rm(list=ls(pattern= "\\_names"))
+rm(list=ls(pattern= "entropyuse*"))
+remove(month1,month2,month3,month4,month5,month6,month7,month8,month9,month10,
+                 month11,month12,month13,month14,month15,month16,month17,month18,month19,
+                 month20,month21,month22,month23,month24)
+```
+
+```{r ,include=FALSE, warning=FALSE,message=FALSE}
+# COMMUNITY LANGUAGE SHIFTS
+
+#visualize cumsum
+unigrams_monthly_count$month <- as.Date(unigrams_monthly_count$month)
+board_growth <- ggplot(unigrams_monthly_count, 
+                       aes(x=month, y=comment_count)) +
+  geom_line() + scale_x_date(breaks = pretty_breaks(14)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Month No.",y="Cumulative Sum of Comments")
+  #geom_point(aes(shape=board_title))
+
+# average entropy over months
+entropy_growth <- ggplot(monthuse, aes(x=as.factor(month_names), y=monthuse)) +
+  geom_bar(stat = "identity") + labs(x = "Month No.",y="Entropy per month")
+
+# compute lag percent change over months
+monthuse <- monthuse[order(as.numeric(monthuse$month_names)),]
+monthuse <- monthuse %>%  #arrange(monthuse) %>%
+  mutate(pct_change = (monthuse/lag(monthuse) - 1) * 100)
+monthuse <- as.data.frame(monthuse)
+monthuse$pct_change <- round(monthuse$pct_change, digits = 4)
+
+entropy_change <- ggplot(subset(monthuse,month_names > 2 ), aes(x=as.factor(month_names), y=pct_change)) +
+  geom_bar(stat = "identity") + labs(x = "Month No.",y="% Change in entropy score") + coord_flip()
+
+# Comment length
+comments$char_length <- nchar(comments$filtered_words, type = "chars", allowNA = FALSE, keepNA = NA)
+comments$word_length <- sapply(strsplit(comments$filtered_words, " "), length)
+
+
+# VOLUNTEER LANGUAGE SHIFTS
+user_entropylag <- user_entropy %>% group_by(username)%>% mutate(pct_change = (entropy/lag(entropy) - 1) * 100)
+
+#Create sequence by username
+user_entropylag <- as.data.table(user_entropylag)
+user_entropylag[, mstart := sequence(.N), by = c("username")]
+
+# entropy growth starting at the month of a volunteers first post
+start_growth_entropy <- as.data.frame(tapply(user_entropylag$entropy, user_entropylag$mstart, mean))
+start_growth_entropy <- cbind(rownames(start_growth_entropy),start_growth_entropy)
+names(start_growth_entropy)[1] <- "Month"
+names(start_growth_entropy)[2] <- "entropy"
+rownames(start_growth_entropy) <- 1:nrow(start_growth_entropy)
+
+entropy_change_users <- ggplot(subset(user_entropylag,!month %in% c("month2")), aes(x=month, y=pct_change)) +
+  geom_bar( stat = "summary", fun.y = "mean") + 
+  labs(x = "Month No.",y="% Change in entropy score") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+comments_user_info_month <- comments %>% group_by(comment_user_id,comment_user_login,month=floor_date(comment_created_at, "month")) %>%
+             summarize(
+              post_length = mean(word_length),
+              comments = length(comment_user_id)
+              )
+names(cast2d)[1] <- "user"
+
+
+
+# VOLUNTEER LANGUAGE MONTH
+new_names <- c()
+for (i in 1:nrow(unigrams_monthly_count)){
+  new_names[i] <- (paste("month",i,sep=""))
+}
+
+monthuse <- cbind(new_names,monthuse)
+user_entropy <- merge(user_entropy,monthuse[, c("new_names","monthuse")], by.x=("month"), by.y =("new_names") , all.x = TRUE )
+names(user_entropy)[3] <- "u_entropy"
+names(user_entropy)[4] <- "c_entropy"
+user_entropy$diff_entropy <- user_entropy$c_entropy - user_entropy$u_entropy
+
+# relevel months
+user_entropy$month <- factor(user_entropy$month, levels = c("month1","month2","month3","month4",  
+                                                            "month5","month6","month7","month8",
+                                                            "month9","month10","month11","month12",
+                                                            "month13","month14","month15","month16",
+                                                            "month17","month18","month19","month20", 
+                                                            "month21","month22","month23","month24"))
+hist_usercomdif <- ggplot(user_entropy, aes(diff_entropy, fill=month)) +
+  geom_histogram(binwidth = 0.01)
+
+seentropydiff <- summarySE(user_entropy, measurevar="diff_entropy", groupvars=c("month"))
+# The errorbars overlapped, so use position_dodge to move them horizontally
+pd <- position_dodge(0.1) # move them .05 to the left and right
+
+ggplot(seentropydiff, aes(x=month, y=diff_entropy, group=month)) + 
+    geom_errorbar(aes(ymin=diff_entropy-ci, ymax=diff_entropy+ci), colour="black", width=.1, position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3)
+detach(package:plyr)
+library(dplyr)
+
+
+# LINGUISTIC LEADERS
+
+unigram_comments <- data.table(unigram_comments)
+unigram_comments[, C := sequence(.N), by = c("unigram","comment_created_at","comment_user_login")]
+#unigram_comments[, useseq := .GRP, by = c("unigram","comment_user_login") ]
+unigram_comments <- as.data.frame(unigram_comments)
+
+word_first_use <- unigram_comments %>% group_by(unigram)%>%
+             summarize(
+              uses = length(unigram),
+              firstuse = min(comment_created_at),
+              recentuse = max(comment_created_at),
+              leader = paste0(comment_user_login[which(firstuse==min(comment_created_at))],""),
+              nonleaderuse = length(unigram[which(leader!=comment_user_login)]),
+              nextuse = min(comment_created_at[which(comment_user_login !=leader)]),
+              uniqueusers = length(unique(comment_user_login))
+              )
+word_first_use <- as.data.frame(word_first_use)
+
+word_first_use <- merge(word_first_use,unigram_comments[, c("unigram","comment_user_login","comment_created_at")], by.x=c("unigram","nextuse"), by.y=c("unigram","comment_created_at"), all.x=TRUE) 
+word_first_use$timetoadopt <- difftime(word_first_use$nextuse,word_first_use$firstuse,units = "secs")
+
+
+#add new monthly unigrams to unigrams_appearance_count
+uninew <- word_first_use %>% group_by(unigram)%>%
+             summarize(
+              unigramfirst = min(firstuse)
+              )
+
+uninew_summary <- uninew %>% group_by(month=floor_date(unigramfirst, "month")) %>%
+   summarize(uniqueunigrams=length(unigram))
+uninew_summary <- as.data.table(uninew_summary)[, monthnumber := .GRP, by = month]
+uninew_summary$cumunigrams <- ave(uninew_summary$uniqueunigrams ,FUN=cumsum)
+unigrams_monthly_count <- cbind(unigrams_monthly_count,uninew_summary)
+unigrams_monthly_count <- unigrams_monthly_count[ -c(9,11) ]
+unigrams_monthly_count <- as.data.frame(unigrams_monthly_count)
+remove(uninew,uninew_summary)
+
+# remove glitch names from the list
+use_mean_nonleader <- as.data.frame(tapply(word_first_use$nonleaderuse, word_first_use$leader, mean))
+use_mean_all <- as.data.frame(tapply(word_first_use$uses, word_first_use$leader, mean))
+users_mean <- as.data.frame(tapply(word_first_use$uniqueusers, word_first_use$leader, mean))
+length_words <- as.data.frame(tapply(word_first_use$nonleaderuse, word_first_use$leader, length))
+leaderboard <- cbind(rownames(length_words),length_words,users_mean,use_mean_all,use_mean_nonleader)
+
+rownames(leaderboard) <- 1:nrow(leaderboard)
+names(leaderboard)[1] <- "username"
+names(leaderboard)[2] <- "wordcount"
+names(leaderboard)[3] <- "unique_users"
+names(leaderboard)[4] <- "use_mean"
+names(leaderboard)[5] <- "use_mean_nonleader"
+leaderboard$use_mean <- round(leaderboard$use_mean, digits = 2)
+leaderboard$use_mean_nonleader <- round(leaderboard$use_mean_nonleader, digits = 2)
+leaderboard$unique_users <- round(leaderboard$unique_users, digits = 2)
+
+remove(use_mean_nonleader,use_mean_all,length_words)
+
+```
+
+
+### Calculating Entropy
+Below is an example of how entropy is calcualted using a scenario of unigram vectors for three volunteers. 
+
+#### Manually computing entropy
+```{r}
+v1 = c("glitch","spiral","blip","blip","glitch","flb","line","glitch","glitch","flb","spiral")
+p1 <- table(v1)
+p1
+p1 <- p1/sum(p1) 
+p1/sum(p1)
+
+sum(-p1*log(p1))
+
+v2 = c("spiral","blip","whistle","koi","koifish","glitch","flb","stripes","tomte","midfrequencyline","koilike")
+p2 <- table(v2)
+p2
+p2 <- p2/sum(p2) 
+p2/sum(p2) 
+
+sum(-p2*log(p2))
+
+v3 = c("blip","blip","whistle","koi","koifish","glitch","flb","stripes","tomte","midfrequencyline","koilike")
+p3 <- table(v3)
+p3
+p3 <- p3/sum(p3) 
+p3/sum(p3) 
+
+sum(-p3*log(p3)) # A little less diversity since we removed one spiral event from v2 
+```
+
+#### Programatic computation
+
+Using the ```entropy()``` function
+```{r}
+entropy(p1, method="ML")
+entropy(p2, method="ML")
+entropy(p3, method="ML")
+```
+
+**Several questions**  
+1. Can we develop a single point estimate for how influential a volunteer was considering the data above?  
+2. Should we remove "junk terms" e.g., would like etc.  
+3. How to handle misspellings in the data. (e.g., 1400ripples, 1400ripppe) and 2-gram glitch terms (e.g., "koifish" represented as "koi fish"" in a comment)
+
+### Introduction
+```{r, include=FALSE}
+# https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html
+
+# Line chart for words/unigrams (in unigrams_monthly_count)
+unigrams_monthly_count$monthnumber.1 <- NULL
+unigrams_monthly_count.cum <- unigrams_monthly_count[c(1,5,8,12)]
+cum.m <- melt(unigrams_monthly_count.cum, id = c("month"))
+
+cum.m$variable2[cum.m$variable=="comment_count"] <- "Comments"
+cum.m$variable2[cum.m$variable=="usercum"] <- "Users"
+cum.m$variable2[cum.m$variable=="cumunigrams"] <- "Unigrams"
+names(cum.m) <- c("Month","Value","Count","Type")
+
+cumsumintro <- ggplot(data=cum.m, aes(x=Month, y=Count,group=Type, colour=Type)) +
+  geom_line() + scale_color_manual(values=c("#999999", "#56B4E9", "#56B4E9")) +
+  geom_point() + theme(legend.position="none")
+remove(cum.m,unigrams_monthly_count.cum)
+
+# Line chart for volunteers (in unigrams_monthly_count)
+numcount <- unigrams_monthly_count[c(1,4,7,11)]
+numcount.m <- melt(numcount, id = c("month"))
+numcount.m$variable2[numcount.m$variable=="comments"] <- "Comments"
+numcount.m$variable2[numcount.m$variable=="usercount"] <- "Users"
+numcount.m$variable2[numcount.m$variable=="uniqueunigrams"] <- "Unigrams"
+names(numcount.m) <- c("Month","Value","Count","Type")
+
+countintro <- ggplot(data=numcount.m, aes(x=Month, y=Count,group=Type, colour=Type)) +
+geom_line() + scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9")) +
+  geom_point() + labs(title="Count of Events")
+remove(numcount.m,numcount)
+
+# There was a problem replicating for unigrams that weren't in a particular month. A solution... replicate the months then replicate the unigrams, cbind() then merge
+#rep(1:3, 4)
+#rep([a vector of unigrams], [length of uingrams *24 months])
+```
+
+```{r}
+cumsumintro
+
+countintro
+```
+
+### Community Language
+
+#### Linguistic Structures
+```{r, include=FALSE}
+
+# Unigrams use
+unigrams_appearance_count <- as.data.frame(unigrams_appearance_count)
+unigrams_appearance_count$unigram <- factor(unigrams_appearance_count$unigram, 
+                     levels=with(unigrams_appearance_count, 
+                                 unigram[order(total_unigrams, unigram, decreasing = TRUE)]))
+
+dist.unigrams <- ggplot(unigrams_appearance_count, aes(total_unigrams)) +
+  geom_histogram(binwidth = 10) + labs(y="No. of Unigrams",x= "Occurrences in Dataset")
+
+#entropy changes
+monthuse <- cbind(monthuse,months)
+
+# Visualizing entropy
+monthuse$type <- ifelse(monthuse$month_names==8,1,0)
+
+month.entropy <- ggplot(data=monthuse, aes(x=as.Date(month), y=monthuse, fill=factor(type))) +
+  geom_bar(stat = "identity",fill=c("#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","red","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9","#56B4E9")) + labs(y="Entropy Score",x="Month") +
+  scale_x_date(date_labels="%b %y",date_breaks  ="1 month") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Visualizing entropy changes
+month.entropy.change <- ggplot(subset(monthuse,month_names>2 ), aes(x=as.Date(month), y=pct_change)) +
+  geom_bar(stat = "identity", fill=c("#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","red","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00","#E69F00")) + labs(x="Month") + ylab( expression(~Delta~entropy~from~previous~month)) +
+  scale_x_date(date_labels="%b %y",date_breaks  ="1 month") + 
+  coord_flip()
+```
+
+```{r}
+month.entropy
+
+month.entropy.change
+```
+
+#### Linguistic Contagion
+```{r, include=FALSE}
+#unigrams_appearance_monthcount
+
+# get unigrams from start of use
+unigrams_appearance_monthcount_start <- unigrams_appearance_monthcount[which(unigrams_appearance_monthcount$cumunigrams >0),]
+
+unigrams_appearance_monthcount_start <- as.data.table(unigrams_appearance_monthcount_start)
+unigrams_appearance_monthcount_start[, start := sequence(.N), by = c("unigram")]
+unigrams_appearance_monthcount_start <- as.data.frame(unigrams_appearance_monthcount_start)
+
+unitraj <- unigrams_appearance_monthcount_start %>% group_by(start) %>%
+  summarize(
+    unigrams=length(unigram),
+    use = mean(total_unigrams),
+    cumuse = mean(cumunigrams)
+)
+unitraj$pct_change <- 1-(unitraj$unigrams/unitraj$unigrams[which(unitraj$start==1)])
+
+#https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html#full_width
+#https://datacarpentry.org/R-genomics/04-dplyr.html 
+```
+
+```{r}
+unitraj %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
+##### Hashtagging
+```{r, include=FALSE}
+
+```
+
+```{r}
+
+```
+
+
+### Language shifts for volunteers
+```{r,include=FALSE}
+enddate <- max(comments_original$comment_created_at)
+user_info$commentsince <- difftime(enddate,user_info$first_comment,units = "days")
+user_info$classifysince <- difftime(enddate,user_info$first_class,units = "days")
+
+
+```
+
+#### User Distance from Community
+```{r, include=FALSE}
+#by join month
+
+user_entropylag.s <- user_entropylag[which(user_entropylag$mstart==1),]
+user_entropylag.s.summary <- user_entropylag.s %>% group_by(month) %>%
+  summarize(
+    users=length(username),
+    entropy = mean(entropy)
+)
+user_entropylag.s.summary <- as.data.frame(user_entropylag.s.summary)
+de <- data.frame("month3","0","0")
+names(de)<-c("month","users","entropy")
+user_entropylag.s.summary <- rbind(user_entropylag.s.summary, de)
+
+user_entropylag.s.summary$month <- factor(user_entropylag.s.summary$month, levels = c("month2","month3","month4","month5","month6","month7","month8","month9","month10","month11","month12","month13","month14","month15","month16","month17","month18","month19","month20","month21","month22","month23","month24"))
+
+
+```
+
+```{r}
+
+user_entropylag.s.summary %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
+#### Linguistic Leaders
+```{r, include=FALSE}
+word_first_use[,c(1:8)][340:345,]
+#Share with Dhruv. Add unique users
+```
+
+```{r}
+leaderboard[,c(1:3)][1:5,]
+```
+
+#### Volunteer Trajectories
+```{r, include=FALSE}
+
+```
+
+```{r}
+
+```
+
